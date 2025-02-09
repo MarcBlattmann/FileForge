@@ -29,7 +29,7 @@ const fileCategories = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
   ],
-  Images: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+  Images: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"],
   Audio: ["audio/mpeg", "audio/wav", "audio/ogg"],
   Video: ["video/mp4", "video/webm"],
   Spreadsheets: [
@@ -48,10 +48,11 @@ const conversionMap: { [key: string]: string[] } = {
   "application/msword": ["pdf", "txt"],
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["pdf", "txt"],
   "text/plain": ["pdf", "docx"],
-  "image/jpeg": ["png", "webp", "gif"],
-  "image/png": ["jpeg", "webp", "gif"],
-  "image/gif": ["jpeg", "png"],
-  "image/webp": ["jpeg", "png"],
+  "image/jpeg": ["png", "webp", "gif", "heic"],
+  "image/png": ["jpeg", "webp", "gif", "heic"],
+  "image/gif": ["jpeg", "png", "heic"],
+  "image/webp": ["jpeg", "png", "heic"],
+  "image/heic": ["jpeg", "png", "webp"],
   "audio/mpeg": ["wav", "ogg"],
   "audio/wav": ["mp3", "ogg"],
   "audio/ogg": ["mp3", "wav"],
@@ -101,10 +102,23 @@ export default function Home() {
     (selectedFile: File) => {
       setFile(selectedFile)
       setConvertTo("")
+      
+      // Handle HEIC files which might have different MIME types
+      const fileType = selectedFile.type || '';
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
+      
+      // Normalize HEIC file type
+      const normalizedType = 
+        (fileExtension === 'heic' || fileExtension === 'heif') 
+          ? 'image/heic'
+          : fileType;
+      
       const category =
-        Object.entries(fileCategories).find(([_, types]) => types.includes(selectedFile.type))?.[0] || null
+        Object.entries(fileCategories).find(([_, types]) => 
+          types.includes(normalizedType))?.[0] || null;
+          
       setFileCategory(category)
-      const formats = conversionMap[selectedFile.type] || []
+      const formats = conversionMap[normalizedType] || []
       setAvailableFormats(formats)
       if (formats.length === 0) {
         toast({
