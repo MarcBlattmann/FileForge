@@ -32,7 +32,3 @@
 ## 💡 Need a New Format?
 
 [Request it here](https://github.com/MarcBlattmann/FileForge/issues/new?labels=feature-request&template=feature_request.md&title=New+Format+Request)
-
-## 📜 License
-
-MIT License
