@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { KofiWidget } from '@/components/KofiWidget'
 
 export const metadata: Metadata = {
   title: 'File Forge',
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <KofiWidget />
+      </body>
     </html>
   )
 }

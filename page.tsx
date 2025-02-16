@@ -17,10 +17,12 @@ import {
   Upload,
   PlusCircle,
   Github,
+  X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 
 const fileCategories = {
   Documents: [
@@ -83,6 +85,14 @@ const getCategoryIcon = (category: string) => {
   }
 }
 
+type FileGroup = {
+  format: string
+  category: string | null
+  files: File[]
+  convertTo: string
+  availableFormats: string[]
+}
+
 export default function Home() {
   console.log("FileConverter page rendering")
 
@@ -90,60 +100,91 @@ export default function Home() {
     console.log("FileConverter page mounted")
   }, [])
 
-  const [file, setFile] = useState<File | null>(null)
-  const [convertTo, setConvertTo] = useState<string>("")
+  const [fileGroups, setFileGroups] = useState<FileGroup[]>([])
   const [isConverting, setIsConverting] = useState(false)
-  const [availableFormats, setAvailableFormats] = useState<string[]>([])
-  const [fileCategory, setFileCategory] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const { toast } = useToast()
 
   const handleFileChange = useCallback(
-    (selectedFile: File) => {
-      setFile(selectedFile)
-      setConvertTo("")
-      
-      // Handle HEIC files which might have different MIME types
-      const fileType = selectedFile.type || '';
-      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
-      
-      // Normalize HEIC file type
-      const normalizedType = 
-        (fileExtension === 'heic' || fileExtension === 'heif') 
-          ? 'image/heic'
-          : fileType;
-      
-      const category =
-        Object.entries(fileCategories).find(([_, types]) => 
-          types.includes(normalizedType))?.[0] || null;
-          
-      setFileCategory(category)
-      const formats = conversionMap[normalizedType] || []
-      setAvailableFormats(formats)
-      if (formats.length === 0) {
-        toast({
-          title: "Unsupported File Type",
-          description: "Sorry, we don't support conversions for this file type.",
-          variant: "destructive",
+    (selectedFiles: File[]) => {
+      const groupedFiles = selectedFiles.reduce<Record<string, FileGroup>>((groups, file) => {
+        const fileType = file.type || ''
+        const fileExtension = file.name.split('.').pop()?.toLowerCase() || ''
+        
+        const normalizedType = 
+          (fileExtension === 'heic' || fileExtension === 'heif') 
+            ? 'image/heic'
+            : fileType
+
+        const formats = conversionMap[normalizedType] || []
+        
+        if (formats.length === 0) {
+          toast({
+            title: "Unsupported File Type",
+            description: `Sorry, we don't support conversions for ${file.name}.`,
+            variant: "destructive",
+          })
+          return groups
+        }
+
+        const category = Object.entries(fileCategories).find(([_, types]) => 
+          types.includes(normalizedType))?.[0] || null
+
+        if (!groups[normalizedType]) {
+          groups[normalizedType] = {
+            format: normalizedType,
+            category,
+            files: [],
+            convertTo: "",
+            availableFormats: formats
+          }
+        }
+        
+        groups[normalizedType].files.push(file)
+        return groups
+      }, {})
+
+      setFileGroups(prev => {
+        const newGroups = [...prev]
+        Object.values(groupedFiles).forEach(group => {
+          const existingGroupIndex = newGroups.findIndex(g => g.format === group.format)
+          if (existingGroupIndex >= 0) {
+            newGroups[existingGroupIndex].files.push(...group.files)
+          } else {
+            newGroups.push(group)
+          }
         })
-      }
+        return newGroups
+      })
     },
-    [toast],
+    [toast]
   )
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        handleFileChange(e.dataTransfer.files[0])
+      if (e.dataTransfer.files?.length) {
+        handleFileChange(Array.from(e.dataTransfer.files))
       }
     },
-    [handleFileChange],
+    [handleFileChange]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
   }, [])
+
+  const handleRemoveFile = (groupIndex: number, fileIndex: number) => {
+    setFileGroups(prev => prev.map((group, i) => {
+      if (i !== groupIndex) return group
+      const newFiles = group.files.filter((_, fi) => fi !== fileIndex)
+      return newFiles.length > 0 ? { ...group, files: newFiles } : null
+    }).filter((group): group is FileGroup => group !== null))
+  }
+
+  const handleRemoveGroup = (groupIndex: number) => {
+    setFileGroups(prev => prev.filter((_, i) => i !== groupIndex))
+  }
 
   const simulateFileConversion = (originalFile: File, newFormat: string): File => {
     const newFileName = originalFile.name.replace(/\.[^/.]+$/, "") + "." + newFormat
@@ -162,10 +203,11 @@ export default function Home() {
   }
 
   const handleConvert = async () => {
-    if (!file || !convertTo) {
+    const unconvertibleGroups = fileGroups.filter(g => !g.convertTo)
+    if (unconvertibleGroups.length > 0) {
       toast({
-        title: "Error",
-        description: "Please select a file and conversion type.",
+        title: "Missing Format Selection",
+        description: "Please select a conversion format for all file groups.",
         variant: "destructive",
       })
       return
@@ -184,16 +226,23 @@ export default function Home() {
       await new Promise((resolve) => requestAnimationFrame(resolve))
     }
 
-    const convertedFile = simulateFileConversion(file, convertTo)
+    // Convert and download all files
+    for (const group of fileGroups) {
+      for (const file of group.files) {
+        const convertedFile = simulateFileConversion(file, group.convertTo)
+        triggerDownload(convertedFile)
+      }
+    }
 
     setIsConverting(false)
     setProgress(100)
+    setFileGroups([])
 
-    console.log(
-      `Conversion complete: ${file.name} has been converted to ${convertTo.toUpperCase()}. Downloading now...`,
-    )
-
-    triggerDownload(convertedFile)
+    const totalFiles = fileGroups.reduce((sum, group) => sum + group.files.length, 0)
+    toast({
+      title: "Conversion Complete",
+      description: `Successfully converted ${totalFiles} file${totalFiles > 1 ? 's' : ''}.`
+    })
   }
 
   return (
@@ -254,65 +303,128 @@ export default function Home() {
             <Input
               id="file-input"
               type="file"
-              onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
+              multiple
+              onChange={(e) => e.target.files && handleFileChange(Array.from(e.target.files))}
               className="hidden"
             />
             <Upload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-2 text-sm text-muted-foreground">Drag and drop your file here, or click to select</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Drag and drop your files here, or click to select
+            </p>
           </div>
 
           <AnimatePresence>
-            {file && fileCategory && (
+            {fileGroups.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="flex items-center space-x-4 bg-muted p-4 rounded-lg"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="border rounded-lg overflow-hidden bg-background"
               >
-                {getCategoryIcon(fileCategory)}
-                <div>
-                  <p className="font-medium">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">{fileCategory}</p>
+                <div className="divide-y">
+                  {fileGroups.map((group, groupIndex) => (
+                    <motion.div
+                      key={`${group.format}-${groupIndex}`}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className={cn(
+                        "hover:bg-muted/50 transition-colors",
+                        group.files.length === 1 ? "py-2 px-3" : "p-3"
+                      )}
+                    >
+                      <div className={cn(
+                        "flex items-center gap-3",
+                        group.files.length > 1 && "mb-1.5"
+                      )}>
+                        <div className="flex-none text-muted-foreground">
+                          {group.category && getCategoryIcon(group.category)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {group.files.length === 1 ? (
+                              group.files[0].name
+                            ) : (
+                              `${group.files.length} ${group.category} files`
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex-none w-28">
+                          <Select
+                            value={group.convertTo}
+                            onValueChange={(value) => {
+                              setFileGroups(prev => prev.map((g, i) => 
+                                i === groupIndex ? { ...g, convertTo: value } : g
+                              ))
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Format" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {group.availableFormats.map((format) => (
+                                <SelectItem key={format} value={format}>
+                                  {format.toUpperCase()}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="flex-none h-8 w-8"
+                          onClick={() => handleRemoveGroup(groupIndex)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      {group.files.length > 1 && (
+                        <div className="ml-9 mt-2 space-y-0.5 text-sm">
+                          {group.files.map((file, fileIndex) => (
+                            <div
+                              key={file.name}
+                              className="flex items-center gap-2 text-muted-foreground px-2 py-0.5 rounded-sm hover:bg-muted/75 group"
+                            >
+                              <div className="flex-1 truncate text-xs">
+                                {file.name}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => handleRemoveFile(groupIndex, fileIndex)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          <AnimatePresence>
-            {file && availableFormats.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-4"
-              >
-                <Label htmlFor="convertTo">Convert To</Label>
-                <Select onValueChange={setConvertTo} value={convertTo}>
-                  <SelectTrigger id="convertTo">
-                    <SelectValue placeholder="Select format" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFormats.map((format) => (
-                      <SelectItem key={format} value={format}>
-                        {format.toUpperCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <Button onClick={handleConvert} disabled={isConverting || !file || !convertTo} className="w-full">
-            {isConverting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Converting
-              </>
-            ) : (
-              "Convert and Download"
-            )}
-          </Button>
+          {fileGroups.length > 0 && (
+            <Button 
+              onClick={handleConvert} 
+              disabled={isConverting} 
+              className="w-full"
+            >
+              {isConverting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Converting {fileGroups.reduce((sum, group) => sum + group.files.length, 0)} file{fileGroups.reduce((sum, group) => sum + group.files.length, 0) > 1 ? 's' : ''}
+                </>
+              ) : (
+                `Convert and Download ${fileGroups.reduce((sum, group) => sum + group.files.length, 0)} file${fileGroups.reduce((sum, group) => sum + group.files.length, 0) > 1 ? 's' : ''}`
+              )}
+            </Button>
+          )}
 
           {isConverting && <Progress value={progress} className="w-full" />}
         </div>
