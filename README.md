@@ -7,7 +7,7 @@
 ## 🚀 Core Features
 
 - Easy drag-and-drop file conversion
-- Supports all major formats:
+- Supports all major formats: 
   - 📄 Documents (PDF, DOCX, TXT)
   - 🖼️ Images (JPEG, PNG, GIF, WEBP, HEIC)
   - 🎵 Audio (MP3, WAV, OGG)
