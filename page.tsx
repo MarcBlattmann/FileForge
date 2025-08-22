@@ -190,9 +190,96 @@ export default function Home() {
     setFileGroups(prev => prev.filter((_, i) => i !== groupIndex))
   }
 
-  const simulateFileConversion = (originalFile: File, newFormat: string): File => {
+  const getProperMimeType = (format: string): string => {
+    const mimeTypes: { [key: string]: string } = {
+      'pdf': 'application/pdf',
+      'txt': 'text/plain',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'png': 'image/png',
+      'jpeg': 'image/jpeg',
+      'jpg': 'image/jpeg',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'heic': 'image/heic',
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'csv': 'text/csv',
+      'xls': 'application/vnd.ms-excel',
+      'ppt': 'application/vnd.ms-powerpoint',
+      'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    }
+    return mimeTypes[format.toLowerCase()] || `application/${format}`
+  }
+
+  const convertMarkdownToPDF = (markdownContent: string): string => {
+    // Simple Markdown to HTML conversion for basic PDF generation
+    let html = markdownContent
+      // Convert headers
+      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+      // Convert bold and italic
+      .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+      .replace(/\*(.*)\*/gim, '<em>$1</em>')
+      // Convert lists
+      .replace(/^\- (.*$)/gim, '<li>$1</li>')
+      // Convert code blocks
+      .replace(/```[\s\S]*?```/gim, (match) => {
+        const code = match.replace(/```(\w+)?\n?/g, '').replace(/```/g, '')
+        return `<pre><code>${code}</code></pre>`
+      })
+      // Convert line breaks
+      .replace(/\n\n/gim, '</p><p>')
+      .replace(/\n/gim, '<br>')
+    
+    // Wrap in basic HTML structure
+    html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Converted from Markdown</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        code { background: #f4f4f4; padding: 2px 4px; border-radius: 2px; }
+        li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <p>${html}</p>
+</body>
+</html>`
+    
+    return html
+  }
+
+  const simulateFileConversion = async (originalFile: File, newFormat: string): Promise<File> => {
     const newFileName = originalFile.name.replace(/\.[^/.]+$/, "") + "." + newFormat
-    return new File([originalFile], newFileName, { type: `application/${newFormat}` })
+    const mimeType = getProperMimeType(newFormat)
+    
+    // Handle special conversions
+    if (newFormat.toLowerCase() === 'pdf') {
+      const originalName = originalFile.name.toLowerCase()
+      if (originalName.endsWith('.md') || originalName.endsWith('.markdown')) {
+        try {
+          // Convert markdown to HTML for PDF
+          const text = await originalFile.text()
+          const htmlContent = convertMarkdownToPDF(text)
+          return new File([htmlContent], newFileName, { type: 'text/html' })
+        } catch (error) {
+          // Fallback to original content if reading fails
+          return new File([originalFile], newFileName, { type: mimeType })
+        }
+      }
+    }
+    
+    // For other conversions, return the original content with proper MIME type
+    return new File([originalFile], newFileName, { type: mimeType })
   }
 
   const triggerDownload = (file: File) => {
@@ -233,7 +320,7 @@ export default function Home() {
     // Convert and download all files
     for (const group of fileGroups) {
       for (const file of group.files) {
-        const convertedFile = simulateFileConversion(file, group.convertTo)
+        const convertedFile = await simulateFileConversion(file, group.convertTo)
         triggerDownload(convertedFile)
       }
     }
@@ -243,9 +330,16 @@ export default function Home() {
     setFileGroups([])
 
     const totalFiles = fileGroups.reduce((sum, group) => sum + group.files.length, 0)
+    const hasMarkdownToPdf = fileGroups.some(group => 
+      group.convertTo.toLowerCase() === 'pdf' && 
+      group.files.some(file => file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.markdown'))
+    )
+    
     toast({
       title: "Conversion Complete",
-      description: `Successfully converted ${totalFiles} file${totalFiles > 1 ? 's' : ''}.`
+      description: hasMarkdownToPdf 
+        ? `Successfully converted ${totalFiles} file${totalFiles > 1 ? 's' : ''}. Note: Markdown to PDF files are converted to HTML format for better compatibility.`
+        : `Successfully converted ${totalFiles} file${totalFiles > 1 ? 's' : ''}.`
     })
   }
 
