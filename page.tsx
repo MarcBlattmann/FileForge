@@ -30,6 +30,7 @@ const fileCategories = {
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
+    "text/markdown",
   ],
   Images: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"],
   Audio: ["audio/mpeg", "audio/wav", "audio/ogg"],
@@ -50,6 +51,7 @@ const conversionMap: { [key: string]: string[] } = {
   "application/msword": ["pdf", "txt"],
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["pdf", "txt"],
   "text/plain": ["pdf", "docx"],
+  "text/markdown": ["pdf"],
   "image/jpeg": ["png", "webp", "gif", "heic"],
   "image/png": ["jpeg", "webp", "gif", "heic"],
   "image/gif": ["jpeg", "png", "heic"],
@@ -114,6 +116,8 @@ export default function Home() {
         const normalizedType = 
           (fileExtension === 'heic' || fileExtension === 'heif') 
             ? 'image/heic'
+            : (fileExtension === 'md' || fileExtension === 'markdown')
+            ? 'text/markdown'
             : fileType
 
         const formats = conversionMap[normalizedType] || []
