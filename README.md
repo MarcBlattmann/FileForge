@@ -13,7 +13,7 @@
   - 🎵 Audio (MP3, WAV, OGG)
   - 🎬 Video (MP4, WEBM)
   - 📊 Spreadsheets (XLSX, CSV, XLS)
-  - 📑 Presentations (PPT, PPTX, PDF)
+  - 📑 Presentations (PPT, PPTX, PDF) 
 
 ## 🛠️ Tech Stack
 
